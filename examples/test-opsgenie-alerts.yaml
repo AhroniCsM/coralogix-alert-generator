@@ -1,0 +1,61 @@
+apiVersion: v1
+items:
+- apiVersion: monitoring.coreos.com/v1
+  kind: PrometheusRule
+  metadata:
+    name: test-opsgenie-alerts
+    namespace: metrics-apps
+    labels:
+      app: prometheus_rules
+      evaluated-by: ruler
+  spec:
+    groups:
+    - name: test_opsgenie_rules
+      rules:
+      - alert: High CPU Usage
+        annotations:
+          description: 'Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has high CPU usage'
+          summary: 'CPU usage is above 80% for pod {{ $labels.pod }}'
+        expr: sum by (pod, namespace, environment, owner) (rate(container_cpu_usage_seconds_total[5m])) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: devops-infra
+          owner: platform-team
+
+      - alert: Memory Pressure
+        annotations:
+          description: 'Node {{ $labels.node }} is under memory pressure in environment {{ $labels.environment }}'
+          summary: 'Memory usage critical on node {{ $labels.node }}'
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: infrastructure
+          revision_owner: sre-team
+
+      - alert: Pod Restart Loop
+        annotations:
+          description: 'Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is restarting frequently'
+          summary: 'Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour'
+        expr: rate(kube_pod_container_status_restarts_total[1h]) > 5
+        for: 15m
+        labels:
+          severity: moderate
+          team: application-team
+          owner: app-owners
+
+      - alert: API Error Rate High
+        annotations:
+          description: 'API {{ $labels.api }} has high error rate in environment {{ $labels.environment }}'
+          summary: 'Error rate for {{ $labels.api }} is {{ $value }}%'
+        expr: sum by (api, environment, revision_owner) (rate(http_requests_total{status=~"5.."}[5m])) / sum by (api, environment, revision_owner) (rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: high
+          team: backend-team
+          revision_owner: backend-owners
+kind: List
+metadata:
+  resourceVersion: ""
+

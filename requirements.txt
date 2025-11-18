@@ -1,0 +1,3 @@
+# Python dependencies for gen_alerts.py
+PyYAML>=5.4.1
+
