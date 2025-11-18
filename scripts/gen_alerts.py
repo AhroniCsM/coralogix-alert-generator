@@ -200,6 +200,7 @@ def sanitize_description_for_tera(text: str) -> str:
     Sanitize description to ensure it's Tera-compatible.
     
     Replaces or removes non-Tera expressions with generic placeholders.
+    Removes $value references and adds conditional environment display.
     
     Args:
         text: Input description text
@@ -212,6 +213,39 @@ def sanitize_description_for_tera(text: str) -> str:
     
     result = convert_prometheus_template_to_tera(text)
     
+    # Remove VALUE = {{ $value }} or similar patterns
+    # Pattern: VALUE = {{ alert.value }} or VALUE = {{alert.value}} or similar variations
+    # Track if we removed a VALUE line that had a period
+    removed_value_with_period = False
+    if re.search(r'VALUE\s*=\s*.*\.', result, re.IGNORECASE):
+        removed_value_with_period = True
+    
+    result = re.sub(r'\s*VALUE\s*=\s*\{\{\s*alert\.value\s*\}\}\s*\.?\s*', '', result, flags=re.IGNORECASE)
+    result = re.sub(r'\s*VALUE\s*=\s*\{\{alert\.value\}\}\s*\.?\s*', '', result, flags=re.IGNORECASE)
+    # Also remove standalone $value references that might have been converted
+    result = re.sub(r'\s*VALUE\s*=\s*\{\{\s*\$value\s*\}\}\s*\.?\s*', '', result, flags=re.IGNORECASE)
+    
+    # Remove lines that only contain VALUE = ... (with any whitespace)
+    lines = result.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        # Skip lines that are just "VALUE = ..." or similar
+        if re.match(r'^\s*VALUE\s*=\s*.*$', line, re.IGNORECASE):
+            continue
+        cleaned_lines.append(line)
+    result = '\n'.join(cleaned_lines)
+    
+    # Add conditional environment display at the end if not already present
+    # This ensures environment is shown when available, but doesn't break if it's not
+    has_environment_conditional = '{% if alert.groups[0].keyValues.environment' in result
+    
+    if not has_environment_conditional:
+        # Add conditional environment display at the end
+        result = result.rstrip()
+        # Don't add period - the conditional environment display doesn't need it
+        # Add conditional environment display
+        result += '{% if alert.groups[0].keyValues.environment is defined and alert.groups[0].keyValues.environment | default(value="") != "" %} ENV = {{ alert.groups[0].keyValues.environment }}{% endif %}'
+    
     # Remove or replace any remaining problematic patterns
     # Multiple consecutive quotes (like *''value''*)
     result = re.sub(r"\*'+", "*", result)  # Remove multiple quotes after *
@@ -219,6 +253,7 @@ def sanitize_description_for_tera(text: str) -> str:
     
     # Clean up excessive whitespace/newlines in descriptions
     result = re.sub(r'\n\s*\n\s*\n+', '\n\n', result)  # Max 2 consecutive newlines
+    result = re.sub(r'\s+', ' ', result)  # Normalize multiple spaces to single space
     result = result.strip()
     
     # If description is empty or only contains non-Tera placeholders, provide a default
